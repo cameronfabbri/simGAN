@@ -34,66 +34,66 @@ if __name__ == '__main__':
    parser.add_argument('--batch_size',    required=False,default=32,type=int,help='Batch size')
    parser.add_argument('--l1_weight',     required=False,default=100.,type=float,help='Weight for L1 loss')
    parser.add_argument('--ig_weight',     required=False,default=1.,type=float,help='Weight for image gradient loss')
-   parser.add_argument('--network',       required=False,default='pix2pix',type=str,help='Network to use')
+   parser.add_argument('--network',       required=False,default='resnet',type=str,help='Network to use')
    parser.add_argument('--augment',       required=False,default=0,type=int,help='Augment data or not')
+   parser.add_argument('--dataset',       required=False,default='gaze',type=str,help='Dataset to use')
    parser.add_argument('--epochs',        required=False,default=100,type=int,help='Number of epochs for GAN')
-   parser.add_argument('--data',          required=False,default='underwater_imagenet',type=str,help='Dataset to use')
+   parser.add_argument('--resBlocks',     required=False,default=4,type=int,help='Number of residual blocks in G')
    a = parser.parse_args()
 
-   LEARNING_RATE = float(a.LEARNING_RATE)
-   LOSS_METHOD   = a.LOSS_METHOD
    batch_size    = a.batch_size
    l1_weight     = float(a.l1_weight)
    ig_weight     = float(a.ig_weight)
    network       = a.network
    augment       = a.augment
+   dataset       = a.dataset
    epochs        = a.epochs
-   data          = a.data
+   resBlocks     = a.resBlocks
    
-   EXPERIMENT_DIR  = 'checkpoints/LOSS_METHOD_'+LOSS_METHOD\
+   experiment_dir  = 'checkpoints'\
                      +'/network_'+network\
+                     +'/resBlocks_'+str(resBlocks)\
                      +'/l1_weight_'+str(l1_weight)\
                      +'/ig_weight_'+str(ig_weight)\
                      +'/augment_'+str(augment)\
-                     +'/data_'+data+'/'\
+                     +'/dataset_'+dataset+'/'\
 
-   IMAGES_DIR      = EXPERIMENT_DIR+'images/'
+   images_dir      = experiment_dir+'images/'
 
    print
-   print 'Creating',EXPERIMENT_DIR
-   try: os.makedirs(IMAGES_DIR)
+   print 'Creating',experiment_dir
+   try: os.makedirs(images_dir)
    except: pass
-   try: os.makedirs(TEST_IMAGES_DIR)
+   try: os.makedirs(TEST_images_dir)
    except: pass
 
-   # TODO add new things to pickle file - INCLUDING BATCH SIZE AND LEARNING RATE
-   # write all this info to a pickle file in the experiments directory
    exp_info = dict()
-   exp_info['LEARNING_RATE'] = LEARNING_RATE
-   exp_info['LOSS_METHOD']   = LOSS_METHOD
    exp_info['batch_size']    = batch_size
    exp_info['l1_weight']     = l1_weight
    exp_info['ig_weight']     = ig_weight
    exp_info['network']       = network
    exp_info['augment']       = augment
+   exp_info['dataset']          = dataset
    exp_info['epochs']        = epochs
-   exp_info['data']          = data
-   exp_pkl = open(EXPERIMENT_DIR+'info.pkl', 'wb')
+   exp_pkl = open(experiment_dir+'info.pkl', 'wb')
    data = pickle.dumps(exp_info)
    exp_pkl.write(data)
    exp_pkl.close()
-   
+
    print
-   print 'LEARNING_RATE: ',LEARNING_RATE
-   print 'LOSS_METHOD:   ',LOSS_METHOD
    print 'batch_size:    ',batch_size
    print 'l1_weight:     ',l1_weight
    print 'ig_weight:     ',ig_weight
    print 'network:       ',network
    print 'augment:       ',augment
+   print 'dataset:       ',dataset
    print 'epochs:        ',epochs
-   print 'data:          ',data
    print
+
+   if dataset == 'gaze':
+      height   = 35
+      width    = 55
+      channels = 1
 
    if network == 'pix2pix': from pix2pix import *
    if network == 'resnet': from resnet import *
@@ -101,55 +101,40 @@ if __name__ == '__main__':
    # global step that is saved with a model to keep track of how many steps/epochs
    global_step = tf.Variable(0, name='global_step', trainable=False)
 
-   # underwater image
-   image_u = tf.placeholder(tf.float32, shape=(batch_size, 256, 256, 3), name='image_u')
+   # synthetic image
+   image_s = tf.placeholder(tf.float32, shape=(batch_size, height, width, channels), name='image_s')
 
-   # correct image
-   image_r = tf.placeholder(tf.float32, shape=(batch_size, 256, 256, 3), name='image_r')
+   # real image
+   image_r = tf.placeholder(tf.float32, shape=(batch_size, height, width, channels), name='image_r')
 
-   # generated corrected colors
-   layers    = netG_encoder(image_u)
-   gen_image = netG_decoder(layers)
+   # generated real image (fake)
+   gen_real = netG(image_s, resBlocks)
 
-   # send 'above' water images to D
-   D_real = netD(image_r, LOSS_METHOD)
+   # send real images to D
+   D_real = netD(image_r)
 
-   # send corrected underwater images to D
-   D_fake = netD(gen_image, LOSS_METHOD, reuse=True)
+   # send generated images to D
+   D_fake = netD(gen_real, reuse=True)
 
-   e = 1e-12
-   if LOSS_METHOD == 'least_squares':
-      print 'Using least squares loss'
-      errD_real = tf.nn.sigmoid(D_real)
-      errD_fake = tf.nn.sigmoid(D_fake)
-      errG = 0.5*(tf.reduce_mean(tf.square(errD_fake - 1)))
-      errD = tf.reduce_mean(0.5*(tf.square(errD_real - 1)) + 0.5*(tf.square(errD_fake)))
-   if LOSS_METHOD == 'gan':
-      print 'Using original GAN loss'
-      errD_real = tf.nn.sigmoid(D_real)
-      errD_fake = tf.nn.sigmoid(D_fake)
-      errG = tf.reduce_mean(-tf.log(errD_fake + e))
-      errD = tf.reduce_mean(-(tf.log(errD_real+e)+tf.log(1-errD_fake+e)))
-   if LOSS_METHOD == 'wgan':
-      # cost functions
-      errD = tf.reduce_mean(D_real) - tf.reduce_mean(D_fake)
-      errG = -tf.reduce_mean(D_fake)
+   # cost functions
+   errD = tf.reduce_mean(D_real) - tf.reduce_mean(D_fake)
+   errG = -tf.reduce_mean(D_fake)
 
-      # gradient penalty
-      epsilon = tf.random_uniform([], 0.0, 1.0)
-      x_hat = image_r*epsilon + (1-epsilon)*gen_image
-      d_hat = netD(x_hat, LOSS_METHOD, reuse=True)
-      gradients = tf.gradients(d_hat, x_hat)[0]
-      slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1]))
-      gradient_penalty = 10*tf.reduce_mean((slopes-1.0)**2)
-      errD += gradient_penalty
+   # gradient penalty
+   epsilon = tf.random_uniform([], 0.0, 1.0)
+   x_hat = image_r*epsilon + (1-epsilon)*gen_real
+   d_hat = netD(x_hat, reuse=True)
+   gradients = tf.gradients(d_hat, x_hat)[0]
+   slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1]))
+   gradient_penalty = 10*tf.reduce_mean((slopes-1.0)**2)
+   errD += gradient_penalty
 
    if l1_weight > 0.0:
-      l1_loss = tf.reduce_mean(tf.abs(gen_image-image_r))
+      l1_loss = tf.reduce_mean(tf.abs(gen_real-image_r))
       errG += l1_weight*l1_loss
 
    if ig_weight > 0.0:
-      ig_loss = loss_gradient_difference(image_r, image_u)
+      ig_loss = loss_gradient_difference(image_r, gen_real)
       errG += ig_weight*ig_loss
 
    # tensorboard summaries
@@ -165,22 +150,22 @@ if __name__ == '__main__':
    d_vars = [var for var in t_vars if 'd_' in var.name]
    g_vars = [var for var in t_vars if 'g_' in var.name]
       
-   G_train_op = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(errG, var_list=g_vars, global_step=global_step)
-   D_train_op = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE).minimize(errD, var_list=d_vars)
+   G_train_op = tf.train.AdamOptimizer(learning_rate=1e-4).minimize(errG, var_list=g_vars, global_step=global_step)
+   D_train_op = tf.train.AdamOptimizer(learning_rate=1e-4).minimize(errD, var_list=d_vars)
 
-   saver = tf.train.Saver(max_to_keep=2)
+   saver = tf.train.Saver(max_to_keep=1)
 
    init = tf.group(tf.local_variables_initializer(), tf.global_variables_initializer())
    sess = tf.Session()
    sess.run(init)
 
    # write out logs for tensorboard to the checkpointSdir
-   summary_writer = tf.summary.FileWriter(EXPERIMENT_DIR+'/logs/', graph=tf.get_default_graph())
+   summary_writer = tf.summary.FileWriter(experiment_dir+'/logs/', graph=tf.get_default_graph())
 
    tf.add_to_collection('vars', G_train_op)
    tf.add_to_collection('vars', D_train_op)
 
-   ckpt = tf.train.get_checkpoint_state(EXPERIMENT_DIR)
+   ckpt = tf.train.get_checkpoint_state(experiment_dir)
    if ckpt and ckpt.model_checkpoint_path:
       print "Restoring previous model..."
       try:
@@ -194,21 +179,18 @@ if __name__ == '__main__':
 
    merged_summary_op = tf.summary.merge_all()
 
-   # underwater photos
-   trainA_paths = np.asarray(glob.glob('datasets/'+data+'/trainA/*.jpg'))
-   # normal photos (ground truth)
-   trainB_paths = np.asarray(glob.glob('datasets/'+data+'/trainB/*.jpg'))
-   # testing paths
-   #test_paths = np.asarray(glob.glob('datasets/'+data+'/test/*.jpg'))
-   test_paths = np.asarray(glob.glob('datasets/'+data+'/trainA/*.jpg'))
+   real_images, synthetic_images = data_ops.loadData(dataset)
 
-   print len(trainB_paths),'training images'
+   # just use the last 500 synthetic for testing
+   train_synthetic, test_synthetic = synthetic_images[:10000], synthetic_images[10000:]
 
-   num_train = len(trainB_paths)
-   num_test  = len(test_paths)
+   num_train = len(real_images)+len(train_synthetic)
+   print len(num_train)
+   print len(train_synthetic)
+   print len(test_synthetic)
+   exit()
 
-   n_critic = 1
-   if LOSS_METHOD == 'wgan': n_critic = 5
+   n_critic = 5
 
    epoch_num = step/(num_train/batch_size)
 
@@ -280,8 +262,8 @@ if __name__ == '__main__':
       
       if step%500 == 0:
          print 'Saving model...'
-         saver.save(sess, EXPERIMENT_DIR+'checkpoint-'+str(step))
-         saver.export_meta_graph(EXPERIMENT_DIR+'checkpoint-'+str(step)+'.meta')
+         saver.save(sess, experiment_dir+'checkpoint-'+str(step))
+         saver.export_meta_graph(experiment_dir+'checkpoint-'+str(step)+'.meta')
          print 'Model saved\n'
 
          idx = np.random.choice(np.arange(num_test), batch_size, replace=False)
@@ -297,12 +279,12 @@ if __name__ == '__main__':
             batch_images[i, ...] = a_img
             i += 1
 
-         gen_images = np.asarray(sess.run(gen_image, feed_dict={image_u:batch_images}))
+         gen_images = np.asarray(sess.run(gen_real, feed_dict={image_u:batch_images}))
 
          c = 0
          for gen, real in zip(gen_images, batch_images):
-            misc.imsave(IMAGES_DIR+str(step)+'_real.png', real)
-            misc.imsave(IMAGES_DIR+str(step)+'_gen.png', gen)
+            misc.imsave(images_dir+str(step)+'_real.png', real)
+            misc.imsave(images_dir+str(step)+'_gen.png', gen)
             c += 1
             if c == 5: break
          print 'Done with test images'
