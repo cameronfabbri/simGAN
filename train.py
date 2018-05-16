@@ -31,9 +31,9 @@ import data_ops
 
 if __name__ == '__main__':
    parser = argparse.ArgumentParser()
-   parser.add_argument('--batch_size', required=False,default=32,type=int,help='Batch size')
+   parser.add_argument('--batch_size', required=False,default=64,type=int,help='Batch size')
    parser.add_argument('--l1_weight',  required=False,default=100.,type=float,help='Weight for L1 loss')
-   parser.add_argument('--ig_weight',  required=False,default=1.,type=float,help='Weight for image gradient loss')
+   parser.add_argument('--ig_weight',  required=False,default=0.,type=float,help='Weight for image gradient loss')
    parser.add_argument('--resBlocks',  required=False,default=4,type=int,help='Number of residual blocks in G')
    parser.add_argument('--network',    required=False,default='resnet',type=str,help='Network to use')
    parser.add_argument('--dataset',    required=False,default='gaze',type=str,help='Dataset to use')
@@ -211,7 +211,7 @@ if __name__ == '__main__':
       print 'epoch:',epoch_num,'step:',step,'D loss:',D_loss,'G_loss:',G_loss,'time:',ss
       step += 1
       
-      if step%1 == 0:
+      if step%500 == 0:
          print 'Saving model...'
          saver.save(sess, experiment_dir+'checkpoint-'+str(step))
          saver.export_meta_graph(experiment_dir+'checkpoint-'+str(step)+'.meta')
@@ -225,6 +225,10 @@ if __name__ == '__main__':
 
          c = 0
          for gen, real in zip(gen_images, batchSynth):
+            gen  = np.squeeze(gen)
+            real = np.squeeze(real)
+            gen  = data_ops.deprocess(gen)
+            real = data_ops.deprocess(real)
             misc.imsave(images_dir+str(step)+'_synth.png', real)
             misc.imsave(images_dir+str(step)+'_gen.png', gen)
             c += 1

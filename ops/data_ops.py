@@ -26,9 +26,12 @@ def deprocess(x):
    return (x+1.0)*127.5
 
 # [0,255] -> [-1, 1]
-def preprocess(x):
-   return (x/127.5)-1.0
-
+def preprocess(x,min_=-1,max_=1):
+#   return (x/127.5)-1.0
+   t = x-np.min(x)
+   b = np.max(x)-np.min(x)
+   x = (max_-min_)*(t/b)+min_
+   return x
 
 def getFeedDict(utrain_paths,places2_paths,BATCH_SIZE):
 

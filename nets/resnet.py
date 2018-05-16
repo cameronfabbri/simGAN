@@ -7,8 +7,6 @@ from tf_ops import *
 
 def resBlock(x, num):
 
-   x = relu(x)
-
    conv1 = tcl.conv2d(x, 64, 3, 1, activation_fn=tf.nn.relu, normalizer_fn=tcl.batch_norm, weights_initializer=tf.random_normal_initializer(stddev=0.02), scope='g_resconv1_'+str(num))
    print 'res_conv1:',conv1
 
@@ -16,6 +14,9 @@ def resBlock(x, num):
    print 'res_conv2:',conv2
    
    output = tf.add(x,conv2)
+   
+   output = relu(output)
+
    print 'res_out:',output
    print
    return output
@@ -27,8 +28,7 @@ def netG(x, resBlocks):
    for i in range(resBlocks-1):
       res = resBlock(res, i+1)
 
-   conv1 = tcl.conv2d(res, 1, 1, 1, activation_fn=tf.identity, normalizer_fn=tcl.batch_norm, weights_initializer=tf.random_normal_initializer(stddev=0.02), scope='g_conv1')
-   conv1 = tanh(conv1)
+   conv1 = tcl.conv2d(res, 1, 1, 1, activation_fn=tf.nn.tanh, normalizer_fn=tcl.batch_norm, weights_initializer=tf.random_normal_initializer(stddev=0.02), scope='g_conv1')
    print 'conv1:',conv1
    return conv1
 
