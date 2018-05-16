@@ -31,21 +31,19 @@ import data_ops
 
 if __name__ == '__main__':
    parser = argparse.ArgumentParser()
-   parser.add_argument('--batch_size',    required=False,default=32,type=int,help='Batch size')
-   parser.add_argument('--l1_weight',     required=False,default=100.,type=float,help='Weight for L1 loss')
-   parser.add_argument('--ig_weight',     required=False,default=1.,type=float,help='Weight for image gradient loss')
-   parser.add_argument('--network',       required=False,default='resnet',type=str,help='Network to use')
-   parser.add_argument('--augment',       required=False,default=0,type=int,help='Augment data or not')
-   parser.add_argument('--dataset',       required=False,default='gaze',type=str,help='Dataset to use')
-   parser.add_argument('--epochs',        required=False,default=100,type=int,help='Number of epochs for GAN')
-   parser.add_argument('--resBlocks',     required=False,default=4,type=int,help='Number of residual blocks in G')
+   parser.add_argument('--batch_size', required=False,default=32,type=int,help='Batch size')
+   parser.add_argument('--l1_weight',  required=False,default=100.,type=float,help='Weight for L1 loss')
+   parser.add_argument('--ig_weight',  required=False,default=1.,type=float,help='Weight for image gradient loss')
+   parser.add_argument('--resBlocks',  required=False,default=4,type=int,help='Number of residual blocks in G')
+   parser.add_argument('--network',    required=False,default='resnet',type=str,help='Network to use')
+   parser.add_argument('--dataset',    required=False,default='gaze',type=str,help='Dataset to use')
+   parser.add_argument('--epochs',     required=False,default=100,type=int,help='Number of epochs for GAN')
    a = parser.parse_args()
 
    batch_size    = a.batch_size
    l1_weight     = float(a.l1_weight)
    ig_weight     = float(a.ig_weight)
    network       = a.network
-   augment       = a.augment
    dataset       = a.dataset
    epochs        = a.epochs
    resBlocks     = a.resBlocks
@@ -55,7 +53,6 @@ if __name__ == '__main__':
                      +'/resBlocks_'+str(resBlocks)\
                      +'/l1_weight_'+str(l1_weight)\
                      +'/ig_weight_'+str(ig_weight)\
-                     +'/augment_'+str(augment)\
                      +'/dataset_'+dataset+'/'\
 
    images_dir      = experiment_dir+'images/'
@@ -72,7 +69,6 @@ if __name__ == '__main__':
    exp_info['l1_weight']     = l1_weight
    exp_info['ig_weight']     = ig_weight
    exp_info['network']       = network
-   exp_info['augment']       = augment
    exp_info['dataset']          = dataset
    exp_info['epochs']        = epochs
    exp_pkl = open(experiment_dir+'info.pkl', 'wb')
@@ -85,7 +81,6 @@ if __name__ == '__main__':
    print 'l1_weight:     ',l1_weight
    print 'ig_weight:     ',ig_weight
    print 'network:       ',network
-   print 'augment:       ',augment
    print 'dataset:       ',dataset
    print 'epochs:        ',epochs
    print
@@ -184,75 +179,31 @@ if __name__ == '__main__':
    # just use the last 500 synthetic for testing
    train_synthetic, test_synthetic = synthetic_images[:10000], synthetic_images[10000:]
 
-   num_train = len(real_images)+len(train_synthetic)
-   print len(num_train)
-   print len(train_synthetic)
-   print len(test_synthetic)
-   exit()
+   real_len  = len(real_images)
+   synth_len = len(train_synthetic)
+   num_test  = len(test_synthetic)
+   num_train = real_len + synth_len
+   print 'train:',len(train_synthetic)
+   print 'test:',len(test_synthetic)
 
    n_critic = 5
 
    epoch_num = step/(num_train/batch_size)
 
-   # kernel for gaussian blurring
-   kernel = np.ones((5,5),np.float32)/25
-
    while epoch_num < epochs:
       s = time.time()
       epoch_num = step/(num_train/batch_size)
 
-      idx = np.random.choice(np.arange(num_train), batch_size, replace=False)
-      batchA_paths = trainA_paths[idx]
-      batchB_paths = trainB_paths[idx]
-      
-      batchA_images = np.empty((batch_size, 256, 256, 3), dtype=np.float32)
-      batchB_images = np.empty((batch_size, 256, 256, 3), dtype=np.float32)
+      real_idx  = np.random.choice(np.arange(real_len), batch_size, replace=False)
+      synth_idx = np.random.choice(np.arange(synth_len), batch_size, replace=False)
+      batchReal  = real_images[real_idx]
+      batchSynth = train_synthetic[synth_idx]
 
-      i = 0
-      for a,b in zip(batchA_paths, batchB_paths):
-         a_img = data_ops.preprocess(misc.imread(a).astype('float32'))
-         b_img = data_ops.preprocess(misc.imread(b).astype('float32'))
-
-         # Data augmentation here - each has 50% chance
-         if augment:
-            r = random.random()
-            # flip image left right
-            if r < 0.5:
-               #print 'lr'
-               a_img = np.fliplr(a_img)
-               b_img = np.fliplr(b_img)
-            
-            r = random.random()
-            # flip image up down
-            if r < 0.5:
-               #print 'updown'
-               a_img = np.flipud(a_img)
-               b_img = np.flipud(b_img)
-            
-            r = random.random()
-            # send in the clean image for both
-            if r < 0.5:
-               #print 'clean'
-               a_img = b_img
-
-            r = random.random()
-            # perform some gaussian blur on distorted image
-            if r < 0.5:
-               #print 'blur'
-               a_img = cv2.filter2D(a_img,-1,kernel)
-
-         #misc.imsave('a_img.png', a_img)
-         #misc.imsave('b_img.png', b_img)
-         #exit()
-         batchA_images[i, ...] = a_img
-         batchB_images[i, ...] = b_img
-         i += 1
-      
       for itr in xrange(n_critic):
-         sess.run(D_train_op, feed_dict={image_u:batchA_images, image_r:batchB_images})
+         sess.run(D_train_op, feed_dict={image_s:batchSynth, image_r:batchReal})
 
-      sess.run(G_train_op, feed_dict={image_u:batchA_images, image_r:batchB_images})
-      D_loss, G_loss, summary = sess.run([errD, errG, merged_summary_op], feed_dict={image_u:batchA_images, image_r:batchB_images})
+      sess.run(G_train_op, feed_dict={image_s:batchSynth, image_r:batchReal})
+      D_loss, G_loss, summary = sess.run([errD, errG, merged_summary_op], feed_dict={image_s:batchSynth, image_r:batchReal})
 
       summary_writer.add_summary(summary, step)
 
@@ -260,30 +211,21 @@ if __name__ == '__main__':
       print 'epoch:',epoch_num,'step:',step,'D loss:',D_loss,'G_loss:',G_loss,'time:',ss
       step += 1
       
-      if step%500 == 0:
+      if step%1 == 0:
          print 'Saving model...'
          saver.save(sess, experiment_dir+'checkpoint-'+str(step))
          saver.export_meta_graph(experiment_dir+'checkpoint-'+str(step)+'.meta')
          print 'Model saved\n'
 
          idx = np.random.choice(np.arange(num_test), batch_size, replace=False)
-         batch_paths = test_paths[idx]
-         
-         batch_images = np.empty((batch_size, 256, 256, 3), dtype=np.float32)
+         batchSynth = test_synthetic[idx]
 
          print 'Testing...'
-         i = 0
-         for a in batch_paths:
-            a_img = misc.imread(a).astype('float32')
-            a_img = data_ops.preprocess(misc.imresize(a_img, (256, 256, 3)))
-            batch_images[i, ...] = a_img
-            i += 1
-
-         gen_images = np.asarray(sess.run(gen_real, feed_dict={image_u:batch_images}))
+         gen_images = np.asarray(sess.run(gen_real, feed_dict={image_s:batchSynth}))
 
          c = 0
-         for gen, real in zip(gen_images, batch_images):
-            misc.imsave(images_dir+str(step)+'_real.png', real)
+         for gen, real in zip(gen_images, batchSynth):
+            misc.imsave(images_dir+str(step)+'_synth.png', real)
             misc.imsave(images_dir+str(step)+'_gen.png', gen)
             c += 1
             if c == 5: break
